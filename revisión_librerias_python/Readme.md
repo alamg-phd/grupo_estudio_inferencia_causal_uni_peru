@@ -80,7 +80,7 @@ El *propensity score* es la probabilidad condicional de recibir tratamiento:
 $$
 e(X_i) = \Pr(D_i = 1 \mid X_i = x)
 $$
-
+  
 Se estima mediante **regresión logística**:
 
 $$
