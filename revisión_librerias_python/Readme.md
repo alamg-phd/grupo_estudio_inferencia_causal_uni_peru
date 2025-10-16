@@ -2,7 +2,7 @@
 
 En esta carpeta listamos y referenciamos los modulos estudiados por el grupo de inferencia causal.
 
-# Libreria CausalInference
+# Librería Causalinference
 
 La librería **CausalInference de Python** es una herramienta de código abierto diseñada para aplicar los principales métodos de Inferencia Causal en entornos de investigación y ciencia de datos. Su enfoque está en el Marco del Resultado Potencial (Potential Outcomes Framework), permitiendo a los usuarios estimar el efecto promedio de un tratamiento (Average Treatment Effect o ATE) y el efecto promedio del tratamiento en los tratados (Average Treatment Effect on the Treated o ATT) a partir de datos observacionales
 
@@ -72,6 +72,23 @@ Summary Statistics
 # Proceso de Estimación y Validación (Pasos 2, 3 y 4)  
 
 ## Paso 2. Estimar el **Propensity Score** $e(X)$ 
+
+### Fundamento Matemático
+
+El *propensity score* es la probabilidad condicional de recibir tratamiento:
+
+$$
+e(X_i) = \Pr(D_i = 1 \mid X_i = x)
+$$
+
+Se estima mediante **regresión logística**:
+
+$$
+\log\left(\frac{e(X_i)}{1 - e(X_i)}\right) = \beta_0 + \beta^T X_i
+$$
+
+### Implementación en Python de Propensity Score
+
 ### Estimar el Propensity Score (regresión logística con términos lineales)
 cm.est_propensity(lin='all')
 print("\n PASO 2: Propensity Score estimado.")
@@ -116,8 +133,27 @@ print(cm.summary_stats)
 
 
 ## PASO 3: Trimming y Validación  
+
+### ⚖️ Fundamento Matemático
+
+Para garantizar **solapamiento** (*overlap*) se requiere que los *propensity scores* no tomen valores extremos:
+
+$$
+0 < \eta \leq e(X_i) \leq 1 - \eta < 1
+$$
+
+Eliminamos observaciones con *propensity score* extremo, definiendo el subconjunto:
+
+$$
+S = \{ i : \alpha \leq \hat{e}(X_i) \leq 1 - \alpha \}
+$$
+
+donde $\alpha$ es el **cutoff** (usualmente $0.1$).
+
+### Implementación en Python de Trimming y Validación
 cm.trim()   
 print("\n PASO 3: Trimming aplicado (Muestra ajustada para solapamiento).")    
+
 ### Después del trimming (debe mostrar un N_c y N_t más bajos)    
 print("\n--- Observaciones DESPUÉS del Trimming ---")    
 print(cm.summary_stats)    
@@ -150,6 +186,99 @@ print(cm.summary_stats)
 
 ## PASO 4: Estimación de Efectos Causaless  
 
+### Fundamento Matemático de Estimadores:
+
+****************
+### 1. Weighting (IPW) — *Inverse Probability Weighting*
+
+El estimador IPW (ponderación por probabilidad inversa) utiliza los *propensity scores* para reponderar las observaciones y estimar el ATE:
+
+<br>
+  
+$\widehat{\tau}{IPW} = \frac{1}{n} \sum{i=1}^{n} \left( \frac{D_i Y_i}{\widehat{e}(X_i)} - \frac{(1 - D_i) Y_i}{1 - \widehat{e}(X_i)} \right)$
+
+<br>
+
+donde:
+
+- $D_i \in \{0,1\}$ indica si la unidad $i$ recibió el tratamiento,  
+- $Y_i$ es el resultado observado,  
+- $\widehat{e}(X_i) = \Pr(D_i = 1 \mid X_i)$ es el *propensity score* estimado.
+
+ **Interpretación:** el IPW repondera cada individuo por la probabilidad inversa de recibir el tratamiento que efectivamente recibió, equilibrando las covariables entre grupos tratados y no tratados.
+
+***************
+### 2. Matching — *Nearest Neighbor Matching*
+
+El estimador por emparejamiento (*matching*) compara unidades tratadas y no tratadas con valores similares de covariables o *propensity score*:
+
+$$
+\widehat{\tau}_{Matching}
+= 
+\frac{1}{N_T} 
+\sum_{i: D_i = 1}
+\left(
+Y_i - \frac{1}{|J(i)|}
+\sum_{j \in J(i)} Y_j
+\right)
+$$
+
+********
+
+
+donde:
+
+- $J(i)$ es el conjunto de vecinos más cercanos al individuo $i$ en el grupo de control,  
+- $|J(i)|$ es el número de vecinos usados (por ejemplo, 1 en el caso *1-NN*),  
+- $N_T$ es el número total de unidades tratadas.
+
+ **Interpretación:** el efecto del tratamiento se obtiene promediando las diferencias de resultados entre cada tratado y sus controles emparejados.
+
+---
+
+### 3. Regresión (OLS) — *Outcome Regression Estimator*
+
+El estimador por regresión lineal ajusta un modelo para el resultado en función del tratamiento y las covariables:
+
+$$
+Y_i = \beta_0 + \tau D_i + \beta^\top X_i + \varepsilon_i
+$$
+
+El efecto causal promedio estimado (ATE) es el coeficiente $\widehat{\tau}$ asociado a la variable de tratamiento $D_i$:
+
+$$
+\widehat{\tau}_{OLS} = \widehat{\beta}_D
+$$
+
+ **Interpretación:** este enfoque asume que, condicionalmente a $X$, la relación entre $D$ y $Y$ es lineal, y que no hay variables omitidas que confundan el efecto.
+
+---
+
+### 4. Blocking — *Stratification (Subclassification) Estimator*
+
+El método de *blocking* o estratificación divide el espacio de los *propensity scores* en $K$ bloques homogéneos:
+
+$$
+\widehat{\tau}_{Blocking}
+=
+\sum_{k=1}^{K}
+\frac{n_k}{n}
+\left(
+\overline{Y}_{1k} - \overline{Y}_{0k}
+\right)
+$$
+
+donde:
+
+- $n_k$ es el número de observaciones en el bloque $k$,  
+- $\overline{Y}_{1k}$ y $\overline{Y}_{0k}$ son las medias de $Y$ para tratados y controles dentro del bloque $k$.
+
+ **Interpretación:** el efecto se estima dentro de cada estrato y luego se promedia ponderando por el tamaño de cada bloque, garantizando comparabilidad local.
+
+
+***************
+
+### Implementación en Python de Estimadores:
 print("\n PASO 4: Ejecutando Estimadores Causaless...")  
 cm.est_via_weighting()  
 cm.est_via_matching(matches=1)  
@@ -188,7 +317,7 @@ print(cm.estimates)
 
 
 
-# PASO 5: Análisis de Resultados
+## PASO 5: Análisis de Resultados
 
 print("\n PASO 5: Resultados Finales de Estimación Causal (ATE, ATT, ATC) ---")
 print(cm.estimates)
@@ -231,34 +360,30 @@ Sobre los resultados de estimación causal (ATE, ATT, ATC), los resultados de lo
 A nivel de Metodos de evaluación:
 
 1. Método Weighting (Ponderación por probabilidad de tratamiento inversa)  
-El estimador de efecto promedio del tratamiento (ATE) es de $3.068$, con un error estándar de $0.095$, y un estadístico $|!z!| = 32.27$ ($p < 0.001$).
+- El estimador de efecto promedio del tratamiento (ATE) es de $3.068$, con un error estándar de $0.095$, y un estadístico $|!z!| = 32.27$ ($p < 0.001$).
 Este método busca reponderar la muestra para balancear las covariables entre grupos tratados y de control, simulando así un experimento aleatorizado.  
-El valor alto de $|!z!|$ y el estrecho intervalo de confianza $[2.881, 3.254]$ indican alta eficiencia y robustez estadística, sugiriendo que el reponderado logró un adecuado balance entre grupos. Sin embargo, la interpretación causal depende críticamente de que las probabilidades de tratamiento se estimen correctamente y de que se cumpla el supuesto de positividad (overlap adecuado entre grupos).  
+- El valor alto de $|!z!|$ y el estrecho intervalo de confianza $[2.881, 3.254]$ indican alta eficiencia y robustez estadística, sugiriendo que el reponderado logró un adecuado balance entre grupos. Sin embargo, la interpretación causal depende críticamente de que las probabilidades de tratamiento se estimen correctamente y de que se cumpla el supuesto de positividad (overlap adecuado entre grupos).  
 
 <br>
 
 2. Método Matching (Emparejamiento de unidades comparables)  
-Los resultados del método de emparejamiento son coherentes con los de weighting, aunque presentan una ligera mayor variabilidad.  
-- $ATE = 3.337$
-- $ATT = 3.782$
-- $ATC = 2.878$
-
-El hecho de que $ATT > ATC$ sugiere que el tratamiento tiene un efecto más fuerte sobre los individuos tratados que sobre los no tratados, lo que podría reflejar heterogeneidad en la respuesta causal.  
-El incremento en el error estándar (por ejemplo, $0.172$ en el ATT) se explica por la reducción efectiva del tamaño muestral al realizar los emparejamientos y por la dependencia inducida entre observaciones pareadas.  
-
-Aun así, la alta significancia estadística ($p < 0.001$ en todos los casos) confirma que el efecto causal es sólido y positivo.  
+- Los resultados del método de emparejamiento son coherentes con los de weighting, aunque presentan una ligera mayor variabilidad.
+   - $ATE = 3.337$  
+   - $ATT = 3.782$  
+   - $ATC = 2.878$
+- El hecho de que $ATT > ATC$ sugiere que el tratamiento tiene un efecto más fuerte sobre los individuos tratados que sobre los no tratados, lo que podría reflejar heterogeneidad en la respuesta causal.
+- El incremento en el error estándar (por ejemplo, $0.172$ en el ATT) se explica por la reducción efectiva del tamaño muestral al realizar los emparejamientos y por la dependencia inducida entre observaciones pareadas.
+- Aun así, la alta significancia estadística ($p < 0.001$ en todos los casos) confirma que el efecto causal es sólido y positivo.  
 
 <br>
 
 3. Método OLS (Regresión lineal controlada)
-El método OLS produce resultados muy cercanos:  
-
-- $ATE = 3.081$  
-- $ATT = 3.574$  
-- $ATC = 2.573$  
-
-El **bajo error estándar** ($0.080$ en el ATE) y el **estadístico z extremadamente alto** ($|!z!| = 38.499$) reflejan una **alta eficiencia**, aunque cabe recordar que el OLS asume linealidad y homocedasticidad, y no garantiza control perfecto del sesgo por confusión si las covariables no se especifican adecuadamente. 
-El patrón $ATT > ATE > ATC$ es consistente con lo observado en el método Matching, reforzando la hipótesis de **efectos de tratamiento heterogéneos**, posiblemente debidos a diferencias sistemáticas en las características de los grupos tratados y de control.  
+- El método OLS produce resultados muy cercanos:
+   - $ATE = 3.081$  
+   - $ATT = 3.574$  
+   - $ATC = 2.573$  
+- El **bajo error estándar** ($0.080$ en el ATE) y el **estadístico z extremadamente alto** ($|!z!| = 38.499$) reflejan una **alta eficiencia**, aunque cabe recordar que el OLS asume linealidad y homocedasticidad, y no garantiza control perfecto del sesgo por confusión si las covariables no se especifican adecuadamente.
+- El patrón $ATT > ATE > ATC$ es consistente con lo observado en el método Matching, reforzando la hipótesis de **efectos de tratamiento heterogéneos**, posiblemente debidos a diferencias sistemáticas en las características de los grupos tratados y de control.  
 
 
 ## Comparación general entre métodos  
